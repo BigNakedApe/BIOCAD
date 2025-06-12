@@ -1,0 +1,245 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Amino Acid Sequence Alignment</title>
+  <!-- React and React DOM -->
+  <script crossorigin src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" onerror="alert('Failed to load React')"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="alert('Failed to load React DOM')"></script>
+  <!-- Babel for JSX/TS transpilation -->
+  <script crossorigin src="https://unpkg.com/@babel/standalone@7.25.6/babel.min.js" onerror="alert('Failed to load Babel')"></script>
+  <!-- MUI Core -->
+  <script crossorigin src="https://unpkg.com/@mui/material@5.14.20/umd/material-ui.production.min.js" onerror="alert('Failed to load MUI')"></script>
+  <!-- react-hook-form -->
+  <script crossorigin src="https://unpkg.com/react-hook-form@7.53.0/dist/react-hook-form.umd.js" onerror="alert('Failed to load react-hook-form')"></script>
+  <!-- Styled-components for MUI -->
+  <script crossorigin src="https://unpkg.com/@emotion/styled@11.11.0/dist/emotion-styled.umd.min.js" onerror="alert('Failed to load styled-components')"></script>
+  <!-- Emotion for MUI -->
+  <script crossorigin src="https://unpkg.com/@emotion/react@11.11.0/dist/emotion-react.umd.min.js" onerror="alert('Failed to load Emotion')"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react,typescript">
+    const { useState } = React;
+    const { createRoot } = ReactDOM;
+    const { useForm, Controller } = ReactHookForm;
+    const { TextField, Button, Box, Typography, Snackbar } = MaterialUI;
+    const { styled } = MaterialUI;
+
+    // Amino acid color scheme based on properties
+    const aminoAcidColors = {
+      A: '#f0f0f0', // Aliphatic
+      G: '#f0f0f0',
+      I: '#f0f0f0',
+      L: '#f0f0f0',
+      V: '#f0f0f0',
+      P: '#f0f0f0',
+      F: '#f0f0f0', // Aromatic
+      W: '#f0f0f0',
+      Y: '#f0f0f0',
+      S: '#e0e0ff', // Polar uncharged
+      T: '#e0e0ff',
+      C: '#e0e0ff',
+      M: '#e0e0ff',
+      N: '#e0e0ff',
+      Q: '#e0e0ff',
+      D: '#ffcccc', // Negatively charged
+      E: '#ffcccc',
+      R: '#ccccff', // Positively charged
+      H: '#ccccff',
+      K: '#ccccff',
+      '-': '#ffffff', // Gap
+    };
+
+    const validAminoAcids = /^[ARNDCQEGHILKMFPSTWYV-]+$/;
+
+    const SequenceChar = styled('span')(({ isDifferent, bgColor }) => ({
+      display: 'inline-block',
+      width: '20px',
+      textAlign: 'center',
+      backgroundColor: isDifferent ? '#ff9999' : bgColor,
+      fontFamily: 'monospace',
+      fontSize: '16px',
+      lineHeight: '24px',
+      userSelect: 'text',
+    }));
+
+    const App = () => {
+      const { control, handleSubmit, formState: { errors } } = useForm({
+        defaultValues: { seq1: '', seq2: '' },
+      });
+      const [alignment, setAlignment] = useState(null);
+      const [snackbarOpen, setSnackbarOpen] = useState(false);
+
+      const validateSequence = (value) => {
+        if (!validAminoAcids.test(value)) {
+          return 'Sequence can only contain A, R, N, D, C, E, Q, G, H, I, L, K, M, F, P, S, T, W, Y, V, or -';
+        }
+        return true;
+      };
+
+      const validateLength = (value, otherValue) => {
+        if (value.length !== otherValue.length) {
+          return 'Sequences must have the same length';
+        }
+        return true;
+      };
+
+      const onSubmit = (data) => {
+        setAlignment({ seq1: data.seq1.toUpperCase(), seq2: data.seq2.toUpperCase() });
+      };
+
+      const handleCopy = (event) => {
+        const selection = window.getSelection()?.toString();
+        if (selection) {
+          navigator.clipboard.writeText(selection);
+          setSnackbarOpen(true);
+        }
+      };
+
+      const handleSnackbarClose = () => {
+        setSnackbarOpen(false);
+      };
+
+      return (
+        <Box sx={{ maxWidth: '800px', mx: 'auto', p: 2 }}>
+          <Typography variant="h4" gutterBottom>
+            Amino Acid Sequence Alignment
+          </Typography>
+          <form onSubmit={handleSubmit(onSubmit)}>
+            <Controller
+              name="seq1"
+              control={control}
+              rules={{
+                required: 'Sequence 1 is required',
+                validate: {
+                  validChars: validateSequence,
+                  sameLength: (value, formValues) => validateLength(value, formValues.seq2),
+                },
+              }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Sequence 1"
+                  fullWidth
+                  margin="normal"
+                  error={!!errors.seq1}
+                  helperText={errors.seq1?.message}
+                  inputProps={{ style: { fontFamily: 'monospace' } }}
+                />
+              )}
+            />
+            <Controller
+              name="seq2"
+              control={control}
+              rules={{
+                required: 'Sequence 2 is required',
+                validate: {
+                  validChars: validateSequence,
+                  sameLength: (value, formValues) => validateLength(value, formValues.seq1),
+                },
+              }}
+              render={({ field }) => (
+                <TextField
+                  {...field}
+                  label="Sequence 2"
+                  fullWidth
+                  margin="normal"
+                  error={!!errors.seq2}
+                  helperText={errors.seq2?.message}
+                  inputProps={{ style: { fontFamily: 'monospace' } }}
+                />
+              )}
+            />
+            <Button type="submit" variant="contained" sx={{ mt: 2 }}>
+              Align Sequences
+            </Button>
+          </form>
+          {alignment && (
+            <Box
+              sx={{
+                mt: 4,
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                userSelect: 'text',
+              }}
+              onMouseUp={handleCopy}
+            >
+              {alignment.seq1.split('').map((char, index) => (
+                <SequenceChar key={`seq1-${index}`} bgColor={aminoAcidColors[char]}>
+                  {char}
+                </SequenceChar>
+              ))}
+              <br />
+              {alignment.seq2.split('').map((char, index) => (
+                <SequenceChar
+                  key={`seq2-${index}`}
+                  isDifferent={char !== alignment.seq1[index]}
+                  bgColor={aminoAcidColors[char]}
+                >
+                  {char}
+                </SequenceChar>
+              ))}
+            </Box>
+          )}
+          <Snackbar
+            open={snackbarOpen}
+            autoHideDuration={1000}
+            onClose={handleSnackbarClose}
+            message="Sequence copied to clipboard"
+          />
+        </Box>
+      );
+    };
+
+    try {
+      const root = createRoot(document.getElementById('root'));
+      root.render(<App />);
+    } catch (e) {
+      console.error('Render error:', e);
+      document.body.innerHTML = '<h1>Error rendering application</h1><p>Please check the console for details.</p>';
+    }
+  </script>
+</body>
+</html>
